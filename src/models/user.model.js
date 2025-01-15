@@ -1,9 +1,11 @@
-// models/user.model.js
 const { Model, DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 const { encrypt, decrypt } = require('./pgcrypto-utils');
 
 class UserInfo extends Model {}
+
+// Define fields that need encryption
+const ENCRYPTED_FIELDS = ['firstName', 'lastName', 'address', 'mobile'];
 
 UserInfo.init({
   id: {
@@ -44,26 +46,36 @@ UserInfo.init({
   timestamps: true,
   hooks: {
     beforeCreate: async (user) => {
-      if (user.firstName) user.firstName = await encrypt(user.firstName);
-      if (user.lastName) user.lastName = await encrypt(user.lastName);
-      if (user.address) user.address = await encrypt(user.address);
-      if (user.mobile) user.mobile = await encrypt(user.mobile);
+      await Promise.all(
+        ENCRYPTED_FIELDS.map(async field => {
+          if (user[field]) {
+            user[field] = await encrypt(user[field]);
+          }
+        })
+      );
     },
     beforeUpdate: async (user) => {
       const changed = user.changed();
-      if (changed && changed.includes('firstName')) user.firstName = await encrypt(user.firstName);
-      if (changed && changed.includes('lastName')) user.lastName = await encrypt(user.lastName);
-      if (changed && changed.includes('address')) user.address = await encrypt(user.address);
-      if (changed && changed.includes('mobile')) user.mobile = await encrypt(user.mobile);
+      if (changed) {
+        await Promise.all(
+          ENCRYPTED_FIELDS.filter(field => changed.includes(field))
+            .map(async field => {
+              user[field] = await encrypt(user[field]);
+            })
+        );
+      }
     },
     afterFind: async (result) => {
       if (!result) return;
 
       const decryptFields = async (user) => {
-        if (user.firstName) user.firstName = await decrypt(user.firstName);
-        if (user.lastName) user.lastName = await decrypt(user.lastName);
-        if (user.address) user.address = await decrypt(user.address);
-        if (user.mobile) user.mobile = await decrypt(user.mobile);
+        await Promise.all(
+          ENCRYPTED_FIELDS.map(async field => {
+            if (user[field]) {
+              user[field] = await decrypt(user[field]);
+            }
+          })
+        );
       };
 
       if (Array.isArray(result)) {
